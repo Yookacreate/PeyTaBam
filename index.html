@@ -1,3 +1,5 @@
+
+Index · HTML
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -796,8 +798,12 @@ function render() {
         });
     }
     
-    var todayLogs = logs.filter(function(l) { return l.date === today; });
-    var present = todayLogs.filter(function(l) { return l.type === 'in'; }).length;
+    // ===== محاسبه تعداد حاضرین بر اساس آخرین وضعیت هر نفر (نه فقط ورود امروز) =====
+    // این‌طوری پرسنل مقیم که چند روز قبل ورود زده‌اند و هنوز خروج نزده‌اند هم «حاضر» حساب می‌شوند
+    var present = persons.filter(function(p, pIdx) {
+        var pLastLog = logs.filter(function(l) { return l.personIdx === pIdx; }).slice(-1)[0];
+        return pLastLog && pLastLog.type === 'in';
+    }).length;
     var leaveToday = leaves.filter(function(l) { return l.date === today && l.status === 'approved'; }).length;
     var absent = persons.length - present - leaveToday;
     document.getElementById('presentCount').textContent = toPersianNumber(present);
@@ -1357,8 +1363,10 @@ document.getElementById('checkinBtn').addEventListener('click', function() {
     
     var idx = currentUser;
     var today = getToday();
-    var lastLog = logs.filter(function(l) { return l.personIdx === idx && l.date === today; }).slice(-1)[0];
-    if (lastLog && lastLog.type === 'in') { showToast('⚠️ قبلاً ورود ثبت شده!', 'warning'); return; }
+    // برای تشخیص وضعیت ورود/خروج، آخرین رکورد شخص (فارغ از تاریخ) بررسی می‌شود
+    // چون پرسنل مقیم ممکن است چند روز قبل ورود زده باشند و هنوز خروج نزده باشند
+    var lastLog = logs.filter(function(l) { return l.personIdx === idx; }).slice(-1)[0];
+    if (lastLog && lastLog.type === 'in') { showToast('⚠️ قبلاً ورود ثبت شده و هنوز خروج نزده‌اید!', 'warning'); return; }
     
     logs.push({ personIdx: idx, type: 'in', date: today, time: getTime(), fullDateTime: getFullDateTime(), timestamp: Date.now() });
     saveData();
@@ -1372,8 +1380,9 @@ document.getElementById('checkoutBtn').addEventListener('click', function() {
     
     var idx = currentUser;
     var today = getToday();
-    var lastLog = logs.filter(function(l) { return l.personIdx === idx && l.date === today; }).slice(-1)[0];
-    if (!lastLog || lastLog.type !== 'in') { showToast('⚠️ امروز ورود ثبت نشده!', 'warning'); return; }
+    // خروج بر اساس آخرین ورودی ثبت‌شده (حتی اگر مربوط به چند روز قبل باشد) بررسی می‌شود
+    var lastLog = logs.filter(function(l) { return l.personIdx === idx; }).slice(-1)[0];
+    if (!lastLog || lastLog.type !== 'in') { showToast('⚠️ ابتدا باید ورود ثبت کنید!', 'warning'); return; }
     
     logs.push({ personIdx: idx, type: 'out', date: today, time: getTime(), fullDateTime: getFullDateTime(), timestamp: Date.now() });
     saveData();
