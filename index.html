@@ -686,11 +686,15 @@ function initAppFromServer() {
             logs = data.logs || [];
             leaves = data.leaves || [];
             admins = data.admins || [];
+            blocks = data.blocks || [];
+            substitutions = data.substitutions || [];
             mainAdminPass = data.mainAdminPass || 'admin123';
             localStorage.setItem('peytabam_persons', JSON.stringify(persons));
             localStorage.setItem('peytabam_logs', JSON.stringify(logs));
             localStorage.setItem('peytabam_leaves', JSON.stringify(leaves));
             localStorage.setItem('peytabam_admins', JSON.stringify(admins));
+            localStorage.setItem('peytabam_blocks', JSON.stringify(blocks));
+            localStorage.setItem('peytabam_substitutions', JSON.stringify(substitutions));
             localStorage.setItem('peytabam_main_pass', mainAdminPass);
             console.log('✅ داده‌های اولیه از سرور بارگذاری شد');
         }
@@ -722,6 +726,8 @@ var persons = JSON.parse(localStorage.getItem('peytabam_persons')) || [];
 var logs = JSON.parse(localStorage.getItem('peytabam_logs')) || [];
 var leaves = JSON.parse(localStorage.getItem('peytabam_leaves')) || [];
 var admins = JSON.parse(localStorage.getItem('peytabam_admins')) || [];
+var blocks = JSON.parse(localStorage.getItem('peytabam_blocks')) || [];
+var substitutions = JSON.parse(localStorage.getItem('peytabam_substitutions')) || [];
 var mainAdminPass = localStorage.getItem('peytabam_main_pass') || 'admin123';
 var isDark = localStorage.getItem('peytabam_dark') === 'true';
 var isAdmin = false;
@@ -733,13 +739,17 @@ var calendarMonth = 4;
 var leaveDateTarget = '';
 var clockInterval = null;
 var leaveModalWasOpen = false;
+var substModalWasOpen = false;
 var pendingRejectIndex = null;
+var pendingRejectType = 'leave';
 
 function saveData() {
     localStorage.setItem('peytabam_persons', JSON.stringify(persons));
     localStorage.setItem('peytabam_logs', JSON.stringify(logs));
     localStorage.setItem('peytabam_leaves', JSON.stringify(leaves));
     localStorage.setItem('peytabam_admins', JSON.stringify(admins));
+    localStorage.setItem('peytabam_blocks', JSON.stringify(blocks));
+    localStorage.setItem('peytabam_substitutions', JSON.stringify(substitutions));
     localStorage.setItem('peytabam_main_pass', mainAdminPass);
     localStorage.setItem('peytabam_dark', String(isDark));
     saveToServer();
@@ -772,6 +782,7 @@ function render() {
     if (!isAdmin && currentUser !== null && currentUser !== 'admin') {
         var userLogs = logs.filter(function(l) { return l.personIdx === currentUser; }).slice(-20).reverse();
         var userLeaves = leaves.filter(function(l) { return l.personIdx === currentUser; }).slice(-20).reverse();
+        var userSubsts = substitutions.filter(function(s) { return s.personIdx === currentUser; }).slice(-20).reverse();
         
         var allHistory = [];
         userLogs.forEach(function(l) {
@@ -783,6 +794,12 @@ function render() {
             var desc = l.desc ? ' (' + l.desc + ')' : '';
             var hourText = l.hour ? ' ساعت ' + l.hour : '';
             allHistory.push({ type: '🌙 ' + l.type + ' مرخصی' + hourText + desc, date: l.date, time: l.hour || '---', status: statusText, statusClass: statusClass });
+        });
+        userSubsts.forEach(function(s) {
+            var statusText = s.status === 'approved' ? '🔄 فعال / تایید شده' : (s.status === 'completed' ? '✅ پایان یافته' : (s.status === 'rejected' ? '❌ رد شده' : '⏳ در انتظار'));
+            var statusClass = s.status === 'approved' ? 'status-active' : (s.status === 'completed' ? 'status-approved' : (s.status === 'rejected' ? 'status-rejected' : 'status-pending'));
+            var range = s.dateTo && s.dateTo !== s.dateFrom ? (s.dateFrom + ' تا ' + s.dateTo) : s.dateFrom;
+            allHistory.push({ type: '🔄 جایگزینی در ' + s.block, date: range, time: '---', status: statusText, statusClass: statusClass });
         });
         allHistory.sort(function(a, b) { return b.date.localeCompare(a.date) || b.time.localeCompare(a.time); });
         
@@ -831,11 +848,49 @@ function render() {
         leaveStatusDiv.style.display = 'none';
     }
     
+    // ===== نمایش وضعیت جایگزینی برای پرسنل =====
+    var substStatusDiv = document.getElementById('substStatusMessage');
+    var endSubstWrap = document.getElementById('endSubstWrap');
+    var activeSubst = null;
+    if (!isAdmin && currentUser !== null && currentUser !== 'admin') {
+        var userSubsts2 = substitutions.filter(function(s) { return s.personIdx === currentUser; });
+        activeSubst = userSubsts2.filter(function(s) { return s.status === 'approved'; }).slice(-1)[0] || null;
+        var lastSubst = userSubsts2.length > 0 ? userSubsts2[userSubsts2.length - 1] : null;
+        if (lastSubst && !activeSubst) {
+            var sStatusText = '', sStatusClass = '', sReasonHtml = '';
+            if (lastSubst.status === 'completed') {
+                sStatusText = '✅ جایگزینی شما در ' + lastSubst.block + ' پایان یافت و ابزار تحویل داده شد';
+                sStatusClass = 'status-approved';
+            } else if (lastSubst.status === 'rejected') {
+                sStatusText = '❌ درخواست جایگزینی شما رد شد';
+                sStatusClass = 'status-rejected';
+                if (lastSubst.reason) sReasonHtml = '<div class="reason-text">📝 دلیل رد: ' + lastSubst.reason + '</div>';
+            } else {
+                sStatusText = '⏳ درخواست جایگزینی شما در انتظار تایید است';
+                sStatusClass = 'status-pending';
+            }
+            substStatusDiv.style.display = 'block';
+            substStatusDiv.className = 'leave-status-box';
+            substStatusDiv.innerHTML = '<div class="' + sStatusClass + '">' + sStatusText + '</div>' + sReasonHtml;
+        } else if (activeSubst) {
+            substStatusDiv.style.display = 'block';
+            substStatusDiv.className = 'leave-status-box';
+            substStatusDiv.innerHTML = '<div class="status-active">🔄 شما در حال حاضر جایگزین در ' + activeSubst.block + ' هستید (از ' + activeSubst.dateFrom + ')</div>';
+        } else {
+            substStatusDiv.style.display = 'none';
+        }
+        if (endSubstWrap) endSubstWrap.style.display = activeSubst ? 'block' : 'none';
+    } else {
+        substStatusDiv.style.display = 'none';
+        if (endSubstWrap) endSubstWrap.style.display = 'none';
+    }
+    
     if (isAdmin && listDiv) {
         listDiv.innerHTML = '';
         persons.forEach(function(p, idx) {
             var lastLog = logs.filter(function(l) { return l.personIdx === idx; }).slice(-1)[0];
-            var status = lastLog && lastLog.type === 'in' ? '✅ حاضر' : '❌ خارج';
+            var activeS = substitutions.filter(function(s) { return s.personIdx === idx && s.status === 'approved'; }).slice(-1)[0];
+            var status = activeS ? ('🔄 جایگزین در ' + activeS.block) : (lastLog && lastLog.type === 'in' ? '✅ حاضر' : '❌ خارج');
             var div = document.createElement('div');
             div.className = 'list-item';
             div.innerHTML = 
@@ -853,6 +908,7 @@ function render() {
             div.innerHTML = 
                 '<div><span class="name">' + p.name + '</span><span class="shift-tag">' + p.shift + '</span><div class="time">🔑 ' + p.password + '</div></div>' +
                 '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                '<button class="btn btn-sm" style="background:#0984e3;color:#fff;" onclick="openPersonHistoryModal(' + idx + ')" title="تاریخچه و حذف رکورد"><i class="fas fa-history"></i></button>' +
                 '<button class="btn btn-sm" style="background:#e17055;color:#fff;" onclick="exportPersonPdf(' + idx + ')" title="خروجی PDF"><i class="fas fa-file-pdf"></i></button>' +
                 '<button class="btn btn-sm btn-secondary" onclick="editPerson(' + idx + ')"><i class="fas fa-edit"></i></button>' +
                 '<button class="btn btn-sm btn-danger" onclick="deletePerson(' + idx + ')"><i class="fas fa-trash"></i></button>' +
@@ -879,12 +935,55 @@ function render() {
                     '<div style="font-size:0.8rem;">📅 ' + l.date + ' | ' + (l.desc || '') + '</div>' +
                     '<div class="actions">' +
                         '<button class="btn-approve" onclick="approveLeave(' + realIdx + ')">✔ تایید</button>' +
-                        '<button class="btn-reject" onclick="openRejectReason(' + realIdx + ')">✖ رد با توضیح</button>' +
+                        '<button class="btn-reject" onclick="openRejectReason(' + realIdx + ', \'leave\')">✖ رد با توضیح</button>' +
                     '</div>';
                 requestsDiv.appendChild(div);
             });
         }
     }
+    
+    // ===== درخواست‌های جایگزینی - فقط نمایش pending =====
+    var substRequestsDiv = document.getElementById('substRequestsList');
+    if (substRequestsDiv && isAdmin) {
+        substRequestsDiv.innerHTML = '';
+        var pendingSubsts = substitutions.filter(function(s) { return s.status === 'pending'; });
+        if (pendingSubsts.length === 0) {
+            substRequestsDiv.innerHTML = '<span style="opacity:0.5;">✅ هیچ درخواست جایگزینی در انتظار تایید نیست</span>';
+        } else {
+            pendingSubsts.forEach(function(s) {
+                var realIdx = substitutions.indexOf(s);
+                var p = persons[s.personIdx];
+                var range = s.dateTo && s.dateTo !== s.dateFrom ? (s.dateFrom + ' تا ' + s.dateTo) : s.dateFrom;
+                var div = document.createElement('div');
+                div.className = 'request-item';
+                div.innerHTML = 
+                    '<div><strong>' + (p ? p.name : 'نامشخص') + '</strong> - جایگزینی در ' + s.block + '</div>' +
+                    '<div style="font-size:0.8rem;">📅 ' + range + ' | ' + (s.desc || '') + ' | 🧰 ابزار تحویل گرفته شد</div>' +
+                    '<div class="actions">' +
+                        '<button class="btn-approve" onclick="approveSubstitution(' + realIdx + ')">✔ تایید</button>' +
+                        '<button class="btn-reject" onclick="openRejectReason(' + realIdx + ', \'subst\')">✖ رد با توضیح</button>' +
+                    '</div>';
+                substRequestsDiv.appendChild(div);
+            });
+        }
+    }
+    
+    // ===== مدیریت بلوک‌ها =====
+    var blockListDiv = document.getElementById('blockList');
+    if (blockListDiv && isAdmin) {
+        blockListDiv.innerHTML = '';
+        if (blocks.length === 0) {
+            blockListDiv.innerHTML = '<span style="opacity:0.5;">هنوز بلوکی تعریف نشده است</span>';
+        } else {
+            blocks.forEach(function(b, idx) {
+                var div = document.createElement('div');
+                div.className = 'block-item';
+                div.innerHTML = '<span class="block-name">🏢 ' + b + '</span><button class="btn btn-sm btn-danger" onclick="deleteBlock(' + idx + ')"><i class="fas fa-trash"></i></button>';
+                blockListDiv.appendChild(div);
+            });
+        }
+    }
+    populateBlockSelector();
     
     if (adminListDiv2 && isAdmin) {
         adminListDiv2.innerHTML = '';
@@ -905,9 +1004,11 @@ function render() {
         return pLastLog && pLastLog.type === 'in';
     }).length;
     var leaveToday = leaves.filter(function(l) { return l.date === today && l.status === 'approved'; }).length;
-    var absent = persons.length - present - leaveToday;
+    var substituteToday = substitutions.filter(function(s) { return s.status === 'approved'; }).length;
+    var absent = persons.length - present - leaveToday - substituteToday;
     document.getElementById('presentCount').textContent = toPersianNumber(present);
     document.getElementById('leaveCount').textContent = toPersianNumber(leaveToday);
+    document.getElementById('substituteCount').textContent = toPersianNumber(substituteToday);
     document.getElementById('absentCount').textContent = toPersianNumber(absent < 0 ? 0 : absent);
     
     // ===== بروز کردن لیست پرسنل در گزارشات =====
@@ -1135,9 +1236,10 @@ window.deleteAdmin = function(idx) {
 };
 
 // ===== باز کردن مودال دلیل رد =====
-window.openRejectReason = function(idx) {
+window.openRejectReason = function(idx, type) {
     if (!isAdmin) return;
     pendingRejectIndex = idx;
+    pendingRejectType = type || 'leave';
     document.getElementById('rejectReasonText').value = '';
     document.getElementById('rejectReasonModal').classList.add('show');
 };
@@ -1171,12 +1273,62 @@ window.approveLeave = function(idx) {
     });
 };
 
-// ===== رد مرخصی با دلیل =====
+// ===== تایید جایگزینی =====
+window.approveSubstitution = function(idx) {
+    if (!isAdmin) return;
+    var s = substitutions[idx];
+    var p = persons[s.personIdx];
+    var personName = p ? p.name : 'نامشخص';
+    
+    substitutions[idx].status = 'approved';
+    saveData();
+    render();
+    
+    var range = s.dateTo && s.dateTo !== s.dateFrom ? (s.dateFrom + ' تا ' + s.dateTo) : s.dateFrom;
+    var message = '✅ درخواست جایگزینی شما در ' + s.block + ' برای ' + range + ' تایید شد.';
+    showToast('✅ درخواست جایگزینی ' + personName + ' تایید شد.', 'success');
+    sendNotification('✅ تایید جایگزینی', message);
+    saveUserNotification(s.personIdx, {
+        type: 'approved',
+        message: message,
+        date: s.dateFrom,
+        hour: '',
+        time: getTime()
+    });
+};
+
+// ===== رد مرخصی یا جایگزینی با دلیل =====
 document.getElementById('confirmRejectBtn').addEventListener('click', function() {
     if (pendingRejectIndex === null) return;
     var reason = document.getElementById('rejectReasonText').value.trim();
     if (!reason) {
         showToast('⚠️ لطفاً دلیل رد را وارد کنید!', 'warning');
+        return;
+    }
+    
+    if (pendingRejectType === 'subst') {
+        var s = substitutions[pendingRejectIndex];
+        var sp = persons[s.personIdx];
+        var spName = sp ? sp.name : 'نامشخص';
+        
+        substitutions[pendingRejectIndex].status = 'rejected';
+        substitutions[pendingRejectIndex].reason = reason;
+        saveData();
+        render();
+        closeRejectReasonModal();
+        
+        var sRange = s.dateTo && s.dateTo !== s.dateFrom ? (s.dateFrom + ' تا ' + s.dateTo) : s.dateFrom;
+        var sMessage = '❌ درخواست جایگزینی شما در ' + s.block + ' برای ' + sRange + ' رد شد.\nدلیل: ' + reason;
+        showToast('❌ درخواست جایگزینی ' + spName + ' با دلیل رد شد.', 'error');
+        sendNotification('❌ رد جایگزینی', sMessage);
+        saveUserNotification(s.personIdx, {
+            type: 'rejected',
+            message: sMessage,
+            reason: reason,
+            date: s.dateFrom,
+            hour: '',
+            time: getTime()
+        });
         return;
     }
     
@@ -1232,6 +1384,10 @@ window.closeCalendar = function() {
         document.getElementById('leaveModal').classList.add('show');
         leaveModalWasOpen = false;
     }
+    if (substModalWasOpen) {
+        document.getElementById('substModal').classList.add('show');
+        substModalWasOpen = false;
+    }
 };
 
 window.openCalendarForLeave = function() {
@@ -1239,6 +1395,16 @@ window.openCalendarForLeave = function() {
     if (document.getElementById('leaveModal').classList.contains('show')) {
         document.getElementById('leaveModal').classList.remove('show');
         leaveModalWasOpen = true;
+    }
+    document.getElementById('calendarModal').classList.add('show');
+    renderCalendar();
+};
+
+window.openCalendarForSubst = function(which) {
+    leaveDateTarget = which === 'to' ? 'substTo' : 'substFrom';
+    if (document.getElementById('substModal').classList.contains('show')) {
+        document.getElementById('substModal').classList.remove('show');
+        substModalWasOpen = true;
     }
     document.getElementById('calendarModal').classList.add('show');
     renderCalendar();
@@ -1288,6 +1454,12 @@ function renderCalendar() {
                 return function() {
                     if (leaveDateTarget === 'leave') {
                         document.getElementById('leaveDate').value = dateStr;
+                        leaveDateTarget = '';
+                    } else if (leaveDateTarget === 'substFrom') {
+                        document.getElementById('substDateFrom').value = dateStr;
+                        leaveDateTarget = '';
+                    } else if (leaveDateTarget === 'substTo') {
+                        document.getElementById('substDateTo').value = dateStr;
                         leaveDateTarget = '';
                     }
                     closeCalendar();
@@ -1351,6 +1523,20 @@ function populatePersonSelector() {
         var opt = document.createElement('option');
         opt.value = idx;
         opt.textContent = p.name + ' (' + p.shift + ')';
+        select.appendChild(opt);
+    });
+    select.value = prev;
+}
+
+function populateBlockSelector() {
+    var select = document.getElementById('substBlock');
+    if (!select) return;
+    var prev = select.value;
+    select.innerHTML = '<option value="">-- انتخاب بلوک --</option>';
+    blocks.forEach(function(b) {
+        var opt = document.createElement('option');
+        opt.value = b;
+        opt.textContent = b;
         select.appendChild(opt);
     });
     select.value = prev;
@@ -1536,11 +1722,217 @@ window.closeLeaveModal = function() {
     leaveModalWasOpen = false;
 };
 
+document.getElementById('substRequestBtn').addEventListener('click', function() {
+    if (isAdmin) { showToast('⚠️ مدیر نمی‌تواند درخواست جایگزینی دهد!', 'warning'); return; }
+    if (currentUser === null || currentUser === 'admin') { showToast('لطفاً ابتدا به عنوان پرسنل وارد شوید.', 'warning'); return; }
+    if (blocks.length === 0) { showToast('⚠️ ابتدا مدیر باید بلوک‌ها را تعریف کند.', 'warning'); return; }
+    document.getElementById('substBlock').value = '';
+    document.getElementById('substDateFrom').value = getToday();
+    document.getElementById('substDateTo').value = '';
+    document.getElementById('substDesc').value = '';
+    document.getElementById('substToolReceived').checked = false;
+    document.getElementById('substModal').classList.add('show');
+});
+
+window.closeSubstModal = function() {
+    document.getElementById('substModal').classList.remove('show');
+    substModalWasOpen = false;
+};
+
+document.getElementById('submitSubstBtn').addEventListener('click', function() {
+    if (isAdmin) { showToast('⚠️ مدیر نمی‌تواند درخواست جایگزینی دهد!', 'warning'); return; }
+    if (currentUser === null || currentUser === 'admin') { showToast('لطفاً ابتدا به عنوان پرسنل وارد شوید.', 'warning'); return; }
+    
+    var idx = currentUser;
+    var block = document.getElementById('substBlock').value;
+    var dateFrom = document.getElementById('substDateFrom').value;
+    var dateTo = document.getElementById('substDateTo').value || dateFrom;
+    var desc = document.getElementById('substDesc').value;
+    var toolReceived = document.getElementById('substToolReceived').checked;
+    
+    if (!block) { showToast('⚠️ لطفاً بلوک مقصد را انتخاب کنید.', 'warning'); return; }
+    if (!dateFrom) { showToast('⚠️ لطفاً تاریخ شروع را انتخاب کنید.', 'warning'); return; }
+    if (!toolReceived) { showToast('⚠️ لطفاً تحویل گرفتن ابزار و دستگاه‌ها را تایید کنید.', 'warning'); return; }
+    
+    substitutions.push({
+        personIdx: idx,
+        block: block,
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        desc: desc,
+        status: 'pending',
+        receivedConfirm: true,
+        receivedTime: getFullDateTime(),
+        deliveredConfirm: false,
+        deliveredTime: '',
+        timestamp: Date.now()
+    });
+    saveData();
+    render();
+    closeSubstModal();
+    showToast('✅ درخواست جایگزینی ثبت شد و در انتظار تایید مدیر است.', 'success');
+});
+
+document.getElementById('endSubstBtn').addEventListener('click', function() {
+    if (currentUser === null || currentUser === 'admin') return;
+    var active = substitutions.filter(function(s) { return s.personIdx === currentUser && s.status === 'approved'; }).slice(-1)[0];
+    if (!active) { showToast('⚠️ جایگزینی فعالی یافت نشد.', 'warning'); return; }
+    document.getElementById('endSubstInfo').textContent = 'جایگزینی در ' + active.block + ' از تاریخ ' + active.dateFrom;
+    document.getElementById('substToolDelivered').checked = false;
+    document.getElementById('endSubstModal').classList.add('show');
+});
+
+window.closeEndSubstModal = function() {
+    document.getElementById('endSubstModal').classList.remove('show');
+};
+
+document.getElementById('confirmEndSubstBtn').addEventListener('click', function() {
+    if (currentUser === null || currentUser === 'admin') return;
+    var delivered = document.getElementById('substToolDelivered').checked;
+    if (!delivered) { showToast('⚠️ لطفاً تحویل دادن ابزار و دستگاه‌ها را تایید کنید.', 'warning'); return; }
+    
+    var subIdx = -1;
+    for (var i = substitutions.length - 1; i >= 0; i--) {
+        if (substitutions[i].personIdx === currentUser && substitutions[i].status === 'approved') { subIdx = i; break; }
+    }
+    if (subIdx === -1) { showToast('⚠️ جایگزینی فعالی یافت نشد.', 'warning'); return; }
+    
+    substitutions[subIdx].status = 'completed';
+    substitutions[subIdx].deliveredConfirm = true;
+    substitutions[subIdx].deliveredTime = getFullDateTime();
+    saveData();
+    render();
+    closeEndSubstModal();
+    showToast('✅ پایان جایگزینی ثبت شد.', 'success');
+});
+
 document.getElementById('rejectReasonModal').addEventListener('click', function(e) {
     if (e.target === this) {
         closeRejectReasonModal();
     }
 });
+
+document.getElementById('substModal').addEventListener('click', function(e) {
+    if (e.target === this) closeSubstModal();
+});
+document.getElementById('endSubstModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEndSubstModal();
+});
+document.getElementById('personHistoryModal').addEventListener('click', function(e) {
+    if (e.target === this) closePersonHistoryModal();
+});
+
+// ================================================================
+// مدیریت بلوک‌ها
+// ================================================================
+
+document.getElementById('addBlockBtn').addEventListener('click', function() {
+    if (!isAdmin) return;
+    var input = document.getElementById('newBlockName');
+    var name = input.value.trim();
+    if (!name) { showToast('⚠️ نام بلوک را وارد کنید.', 'warning'); return; }
+    if (blocks.indexOf(name) !== -1) { showToast('⚠️ این بلوک قبلاً تعریف شده است.', 'warning'); return; }
+    blocks.push(name);
+    saveData();
+    render();
+    input.value = '';
+    showToast('✅ بلوک "' + name + '" اضافه شد.', 'success');
+});
+
+window.deleteBlock = function(idx) {
+    if (!isAdmin) return;
+    if (confirm('آیا از حذف بلوک "' + blocks[idx] + '" مطمئن هستید؟')) {
+        blocks.splice(idx, 1);
+        saveData();
+        render();
+        showToast('✅ بلوک حذف شد.', 'success');
+    }
+};
+
+// ================================================================
+// تاریخچه پرسنل و حذف رکوردهای اشتباهی/تستی (مخصوص مدیر)
+// ================================================================
+
+window.openPersonHistoryModal = function(personIdx) {
+    if (!isAdmin) return;
+    var p = persons[personIdx];
+    document.getElementById('personHistoryTitle').textContent = 'تاریخچه ' + (p ? p.name : '');
+    document.getElementById('personHistoryModal').setAttribute('data-person-idx', personIdx);
+    renderPersonHistoryList(personIdx);
+    document.getElementById('personHistoryModal').classList.add('show');
+};
+
+window.closePersonHistoryModal = function() {
+    document.getElementById('personHistoryModal').classList.remove('show');
+};
+
+function renderPersonHistoryList(personIdx) {
+    var listDiv = document.getElementById('personHistoryList');
+    var rows = [];
+    
+    logs.forEach(function(l, idx) {
+        if (l.personIdx !== personIdx) return;
+        rows.push({
+            html: (l.type === 'in' ? '✅ ورود' : '❌ خروج') + ' — ' + l.date + ' ساعت ' + l.time,
+            ts: l.timestamp || 0,
+            del: function() { deletePersonRecord('logs', idx); }
+        });
+    });
+    leaves.forEach(function(l, idx) {
+        if (l.personIdx !== personIdx) return;
+        var statusText = l.status === 'approved' ? 'تایید شده' : (l.status === 'rejected' ? 'رد شده' : 'در انتظار');
+        rows.push({
+            html: '🌙 مرخصی ' + l.type + ' — ' + l.date + (l.hour ? ' ساعت ' + l.hour : '') + ' (' + statusText + ')',
+            ts: l.timestamp || 0,
+            del: function() { deletePersonRecord('leaves', idx); }
+        });
+    });
+    substitutions.forEach(function(s, idx) {
+        if (s.personIdx !== personIdx) return;
+        var range = s.dateTo && s.dateTo !== s.dateFrom ? (s.dateFrom + ' تا ' + s.dateTo) : s.dateFrom;
+        var statusText = s.status === 'approved' ? 'فعال' : (s.status === 'completed' ? 'پایان یافته' : (s.status === 'rejected' ? 'رد شده' : 'در انتظار'));
+        rows.push({
+            html: '🔄 جایگزینی در ' + s.block + ' — ' + range + ' (' + statusText + ')',
+            ts: s.timestamp || 0,
+            del: function() { deletePersonRecord('substitutions', idx); }
+        });
+    });
+    
+    rows.sort(function(a, b) { return b.ts - a.ts; });
+    
+    if (rows.length === 0) {
+        listDiv.innerHTML = '<span style="opacity:0.5;">هیچ رکوردی برای این پرسنل ثبت نشده است</span>';
+        return;
+    }
+    
+    listDiv.innerHTML = '';
+    rows.forEach(function(row, i) {
+        var wrap = document.createElement('div');
+        wrap.className = 'history-row-wrap';
+        var info = document.createElement('div');
+        info.className = 'history-row-info';
+        info.textContent = row.html;
+        var btn = document.createElement('button');
+        btn.className = 'history-delete-btn';
+        btn.innerHTML = '<i class="fas fa-trash"></i>';
+        btn.onclick = row.del;
+        wrap.appendChild(info);
+        wrap.appendChild(btn);
+        listDiv.appendChild(wrap);
+    });
+}
+
+window.deletePersonRecord = function(arrName, idx) {
+    if (!isAdmin) return;
+    if (!confirm('آیا از حذف این رکورد مطمئن هستید؟ (مثلاً ثبت اشتباهی یا تستی)')) return;
+    var arr = arrName === 'logs' ? logs : (arrName === 'leaves' ? leaves : substitutions);
+    var personIdx = arr[idx] ? arr[idx].personIdx : null;
+    arr.splice(idx, 1);
+    saveData();
+    render();
+    if (personIdx !== null) renderPersonHistoryList(personIdx);
+    showToast('✅ رکورد حذف شد.', 'success');
+};
 
 // ================================================================
 // ادامه رویدادها
