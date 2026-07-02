@@ -46,7 +46,7 @@
         .input-group label { font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; color: var(--text); }
         .input-group input, .input-group select, .input-group textarea { padding: 14px 18px; border-radius: 60px; border: 2px solid #dfe6e9; background: var(--bg); color: var(--text); font-size: 1rem; transition: var(--transition); outline: none; width: 100%; }
         .input-group input:focus, .input-group select:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(108, 92, 231, 0.15); }
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
         .stat-card { background: var(--bg); padding: 14px 8px; border-radius: 18px; text-align: center; transition: var(--transition); border: 1px solid rgba(108, 92, 231, 0.08); }
         .stat-card .num { font-size: 1.8rem; font-weight: 900; color: var(--primary); }
         .stat-card .label { font-size: 0.65rem; opacity: 0.7; margin-top: 4px; }
@@ -79,7 +79,16 @@
         .btn-approve { background: var(--secondary); color: #fff; }
         .btn-reject { background: var(--danger); color: #fff; }
         .footer { margin-top: 28px; text-align: center; font-size: 0.7rem; opacity: 0.5; border-top: 1px solid rgba(108, 92, 231, 0.08); padding-top: 16px; }
-        @media (max-width: 420px) { .app-container { padding: 12px; } .stats-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; } .stat-card .num { font-size: 1.4rem; } }
+        @media (max-width: 420px) { .app-container { padding: 12px; } .stats-grid { grid-template-columns: repeat(4, 1fr); gap: 5px; } .stat-card { padding: 10px 4px; } .stat-card .num { font-size: 1.2rem; } .stat-card .label { font-size: 0.58rem; } }
+        .block-item { background: var(--bg); padding: 10px 14px; border-radius: 14px; margin: 6px 0; display: flex; justify-content: space-between; align-items: center; border-right: 4px solid var(--primary); }
+        .block-item .block-name { font-weight: 700; }
+        .tool-confirm-box { background: var(--bg); border: 2px dashed var(--primary); border-radius: 14px; padding: 12px 14px; margin: 10px 0; }
+        .tool-confirm-box label { display: flex; align-items: flex-start; gap: 10px; font-size: 0.85rem; font-weight: 700; cursor: pointer; line-height: 1.6; }
+        .tool-confirm-box input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; accent-color: var(--primary); }
+        .status-active { color: var(--warning); font-weight: bold; }
+        .history-delete-btn { background: var(--danger); color: #fff; border: none; width: 26px; height: 26px; border-radius: 50%; cursor: pointer; font-size: 0.75rem; flex-shrink: 0; }
+        .history-row-wrap { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 12px; padding: 8px 10px; margin: 6px 0; }
+        .history-row-wrap .history-row-info { flex: 1; font-size: 0.78rem; }
         
         .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(12px); }
         .login-overlay.hidden { display: none; }
@@ -161,10 +170,12 @@
     <div class="stats-grid">
         <div class="stat-card"><div class="icon">✅</div><div class="num" id="presentCount">۰</div><div class="label">حاضر</div></div>
         <div class="stat-card"><div class="icon">🌙</div><div class="num" id="leaveCount">۰</div><div class="label">مرخصی</div></div>
+        <div class="stat-card"><div class="icon">🔄</div><div class="num" id="substituteCount">۰</div><div class="label">جایگزین</div></div>
         <div class="stat-card"><div class="icon">❌</div><div class="num" id="absentCount">۰</div><div class="label">غایب</div></div>
     </div>
 
     <div id="leaveStatusMessage" style="display:none;"></div>
+    <div id="substStatusMessage" style="display:none;"></div>
 
     <div class="tabs">
         <button class="tab-btn active" data-tab="personnel"><i class="fas fa-user-check"></i> پرسنل</button>
@@ -179,7 +190,13 @@
         <div style="display:flex;gap:8px;margin:6px 0 10px;flex-wrap:wrap;">
             <button class="btn" id="checkinBtn" style="flex:1;min-width:100px;"><i class="fas fa-sign-in-alt"></i> ورود</button>
             <button class="btn btn-danger" id="checkoutBtn" style="flex:1;min-width:100px;"><i class="fas fa-sign-out-alt"></i> خروج</button>
+        </div>
+        <div style="display:flex;gap:8px;margin:0 0 10px;flex-wrap:wrap;">
             <button class="btn btn-warning" id="leaveRequestBtn" style="flex:1;min-width:100px;"><i class="fas fa-calendar-alt"></i> مرخصی</button>
+            <button class="btn" id="substRequestBtn" style="flex:1;min-width:100px;background:#0984e3;box-shadow:0 6px 18px rgba(9,132,227,0.35);"><i class="fas fa-exchange-alt"></i> جایگزینی</button>
+        </div>
+        <div style="display:none;margin:0 0 10px;" id="endSubstWrap">
+            <button class="btn btn-danger" id="endSubstBtn" style="width:100%;"><i class="fas fa-undo"></i> پایان جایگزینی و تحویل ابزار</button>
         </div>
         
         <!-- ===== جدول تاریخچه پرسنل ===== -->
@@ -213,6 +230,18 @@
         <div id="adminPersonList" style="max-height:300px;overflow-y:auto;"></div>
         <h4 style="margin-top:16px;">📝 درخواست‌های مرخصی در انتظار تایید</h4>
         <div id="requestsList"></div>
+        <h4 style="margin-top:16px;">🔄 درخواست‌های جایگزینی در انتظار تایید</h4>
+        <div id="substRequestsList"></div>
+        <hr style="margin:16px 0;border-color:rgba(108,92,231,0.1);">
+        <h4>🏢 مدیریت بلوک‌ها</h4>
+        <div class="input-group">
+            <label><i class="fas fa-cubes"></i> افزودن بلوک جدید</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <input type="text" id="newBlockName" placeholder="مثلا بلوک ۲" style="flex:2;min-width:120px;">
+                <button class="btn btn-sm btn-secondary" id="addBlockBtn"><i class="fas fa-plus"></i></button>
+            </div>
+        </div>
+        <div id="blockList" style="max-height:200px;overflow-y:auto;"></div>
         <hr style="margin:16px 0;border-color:rgba(108,92,231,0.1);">
         <h4>🔐 مدیریت مدیران</h4>
         <div class="input-group">
@@ -301,6 +330,69 @@
     </div>
 </div>
 
+<!-- SUBSTITUTION REQUEST MODAL -->
+<div class="modal" id="substModal">
+    <div class="modal-content">
+        <h3><i class="fas fa-exchange-alt"></i> درخواست جایگزینی پرسنل</h3>
+        <div class="input-group">
+            <label><i class="fas fa-cubes"></i> بلوک مقصد</label>
+            <select id="substBlock">
+                <option value="">-- انتخاب بلوک --</option>
+            </select>
+        </div>
+        <div class="input-group">
+            <label>تاریخ شروع</label>
+            <input type="text" id="substDateFrom" placeholder="کلیک کنید" readonly onclick="openCalendarForSubst('from')">
+        </div>
+        <div class="input-group">
+            <label>تاریخ پایان (اختیاری - اگر چند روزه است)</label>
+            <input type="text" id="substDateTo" placeholder="کلیک کنید" readonly onclick="openCalendarForSubst('to')">
+        </div>
+        <div class="input-group">
+            <label>توضیحات</label>
+            <textarea id="substDesc" rows="2" placeholder="دلیل جایگزینی..."></textarea>
+        </div>
+        <div class="tool-confirm-box">
+            <label>
+                <input type="checkbox" id="substToolReceived">
+                اینجانب ابزارها و دستگاه‌ها را تحویل گرفتم.
+            </label>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+            <button class="btn btn-secondary" id="submitSubstBtn"><i class="fas fa-check"></i> ثبت درخواست</button>
+            <button class="btn btn-danger" onclick="closeSubstModal()"><i class="fas fa-times"></i> انصراف</button>
+        </div>
+    </div>
+</div>
+ 
+<!-- END SUBSTITUTION MODAL -->
+<div class="modal" id="endSubstModal">
+    <div class="modal-content">
+        <h3><i class="fas fa-undo"></i> پایان جایگزینی</h3>
+        <p style="font-size:0.85rem;opacity:0.8;margin-bottom:10px;" id="endSubstInfo"></p>
+        <div class="tool-confirm-box">
+            <label>
+                <input type="checkbox" id="substToolDelivered">
+                اینجانب ابزارها و دستگاه‌ها را تحویل دادم.
+            </label>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+            <button class="btn btn-secondary" id="confirmEndSubstBtn"><i class="fas fa-check"></i> ثبت پایان</button>
+            <button class="btn btn-danger" onclick="closeEndSubstModal()"><i class="fas fa-times"></i> انصراف</button>
+        </div>
+    </div>
+</div>
+ 
+<!-- ADMIN PERSON HISTORY / DELETE MODAL -->
+<div class="modal" id="personHistoryModal">
+    <div class="modal-content" style="max-width:480px;">
+        <h3><i class="fas fa-history"></i> <span id="personHistoryTitle">تاریخچه پرسنل</span></h3>
+        <p style="font-size:0.75rem;opacity:0.7;margin-bottom:10px;">برای حذف رکوردهای اشتباهی یا تستی، روی 🗑 کلیک کنید.</p>
+        <div id="personHistoryList" style="max-height:55vh;overflow-y:auto;"></div>
+        <button class="btn btn-secondary" onclick="closePersonHistoryModal()" style="margin-top:12px;">بستن</button>
+    </div>
+</div>
+ 
 <!-- REJECT REASON MODAL -->
 <div class="modal reject-reason-modal" id="rejectReasonModal">
     <div class="modal-content">
@@ -518,6 +610,8 @@ function saveToServer() {
         logs: logs,
         leaves: leaves,
         admins: admins,
+        blocks: blocks,
+        substitutions: substitutions,
         mainAdminPass: mainAdminPass,
         lastUpdate: now
     };
@@ -542,23 +636,31 @@ function loadFromServer() {
         var newLogs = data.logs || [];
         var newLeaves = data.leaves || [];
         var newAdmins = data.admins || [];
+        var newBlocks = data.blocks || [];
+        var newSubstitutions = data.substitutions || [];
 
         var changed = (
             JSON.stringify(newPersons) !== JSON.stringify(persons) ||
             JSON.stringify(newLogs) !== JSON.stringify(logs) ||
             JSON.stringify(newLeaves) !== JSON.stringify(leaves) ||
-            JSON.stringify(newAdmins) !== JSON.stringify(admins)
+            JSON.stringify(newAdmins) !== JSON.stringify(admins) ||
+            JSON.stringify(newBlocks) !== JSON.stringify(blocks) ||
+            JSON.stringify(newSubstitutions) !== JSON.stringify(substitutions)
         );
         if (changed) {
             persons = newPersons;
             logs = newLogs;
             leaves = newLeaves;
             admins = newAdmins;
+            blocks = newBlocks;
+            substitutions = newSubstitutions;
             mainAdminPass = data.mainAdminPass || 'admin123';
             localStorage.setItem('peytabam_persons', JSON.stringify(persons));
             localStorage.setItem('peytabam_logs', JSON.stringify(logs));
             localStorage.setItem('peytabam_leaves', JSON.stringify(leaves));
             localStorage.setItem('peytabam_admins', JSON.stringify(admins));
+            localStorage.setItem('peytabam_blocks', JSON.stringify(blocks));
+            localStorage.setItem('peytabam_substitutions', JSON.stringify(substitutions));
             localStorage.setItem('peytabam_main_pass', mainAdminPass);
             render();
             console.log('🔄 داده‌ها از سرور بروز شد');
